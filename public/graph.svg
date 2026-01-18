@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300">
+  <!-- Gradient definition -->
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#60a5fa;stop-opacity:0.5" />
+      <stop offset="100%" style="stop-color:#60a5fa;stop-opacity:0" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Area under the line -->
+  <path d="M20 270 Q120 260, 170 200 Q220 140, 260 30 L260 290 L20 290 Z" 
+        fill="url(#gradient)"/>
+  
+  <!-- The upward line - smooth exponential curve -->
+  <path d="M20 270 Q120 260, 170 200 Q220 140, 260 30" 
+        stroke="#60a5fa" 
+        stroke-width="20" 
+        fill="none"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+</svg>
