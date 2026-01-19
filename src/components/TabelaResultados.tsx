@@ -21,6 +21,12 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
+  Card,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -183,6 +189,20 @@ export function TabelaResultados({ parcelas }: TabelaResultadosProps) {
   const [ordenacao, setOrdenacao] = useState<SortingState>([])
   const [filtros, setFiltros] = useState<ColumnFiltersState>([])
 
+  const totalPrincipal = parcelas.reduce(
+    (acumulado, parcela) => acumulado + parcela.valorPrincipal,
+    0
+  )
+  const totalJuros = parcelas.reduce(
+    (acumulado, parcela) => acumulado + parcela.valorJuros,
+    0
+  )
+  const valorTotal = totalPrincipal + totalJuros
+  const valorAberto = parcelas.reduce((acumulado, parcela) => {
+    if (parcela.liquidada) return acumulado
+    return acumulado + parcela.valorPrincipal + parcela.valorJuros
+  }, 0)
+
   const tabela = useReactTable({
     data: parcelas,
     columns: colunas,
@@ -208,6 +228,27 @@ export function TabelaResultados({ parcelas }: TabelaResultadosProps) {
 
   return (
     <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Card size="sm">
+          <CardHeader>
+            <CardDescription>Valor Total</CardDescription>
+            <CardTitle>{formatarMoeda(valorTotal)}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card size="sm">
+          <CardHeader>
+            <CardDescription>Valor Aberto</CardDescription>
+            <CardTitle>{formatarMoeda(valorAberto)}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card size="sm">
+          <CardHeader>
+            <CardDescription>Juros Total</CardDescription>
+            <CardTitle>{formatarMoeda(totalJuros)}</CardTitle>
+          </CardHeader>
+        </Card>
+      </div>
+
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">Filtrar por tipo:</span>
@@ -252,7 +293,10 @@ export function TabelaResultados({ parcelas }: TabelaResultadosProps) {
               tabela.getRowModel().rows.map((linha) => (
                 <TableRow
                   key={linha.id}
-                  className={cn(linha.original.tipo === 1 && "bg-muted/40")}
+                  className={cn(
+                    linha.original.tipo === 1 &&
+                      "bg-muted/40 border-l-4 border-l-muted-foreground/40"
+                  )}
                 >
                   {linha.getVisibleCells().map((celula) => (
                     <TableCell key={celula.id}>

@@ -102,6 +102,30 @@ function parsearDataBR(valor: string): { iso: string; display: string } | null {
   }
 }
 
+function criarDataLocal(valorISO: string): Date {
+  const [ano, mes, dia] = valorISO.split("-").map((parte) => parseInt(parte, 10))
+  return new Date(ano, mes - 1, dia)
+}
+
+function adicionarMeses(dataBase: Date, meses: number): Date {
+  const anoBase = dataBase.getFullYear()
+  const mesBase = dataBase.getMonth()
+  const diaBase = dataBase.getDate()
+  const mesAlvo = mesBase + meses
+  const anoAlvo = anoBase + Math.floor(mesAlvo / 12)
+  const mesNormalizado = ((mesAlvo % 12) + 12) % 12
+  const ultimoDia = new Date(anoAlvo, mesNormalizado + 1, 0).getDate()
+  const diaAlvo = Math.min(diaBase, ultimoDia)
+  return new Date(anoAlvo, mesNormalizado, diaAlvo)
+}
+
+function formatarDataBR(data: Date): string {
+  const dia = String(data.getDate()).padStart(2, "0")
+  const mes = String(data.getMonth() + 1).padStart(2, "0")
+  const ano = data.getFullYear()
+  return `${dia}/${mes}/${ano}`
+}
+
 export function FormularioParcelas({ onResultados }: FormularioParcelasProps) {
   const [aberto, setAberto] = useState(false)
   const [parcelas, setParcelas] = useState<ParcelaFormulario[]>([
@@ -113,6 +137,13 @@ export function FormularioParcelas({ onResultados }: FormularioParcelasProps) {
   const [spreadAnualDisplay, setSpreadAnualDisplay] = useState("0")
   const [dataInicial, setDataInicial] = useState("01/01/2026")
   const [dataReferencia, setDataReferencia] = useState("15/04/2026")
+  const [totalParcelas, setTotalParcelas] = useState(12)
+  const [intervaloJuros, setIntervaloJuros] = useState(1)
+  const [intervaloPrincipal, setIntervaloPrincipal] = useState(6)
+  const [carenciaJuros, setCarenciaJuros] = useState(0)
+  const [carenciaPrincipal, setCarenciaPrincipal] = useState(0)
+  const [valorPrincipalGerado, setValorPrincipalGerado] = useState("")
+  const [primeiroVencimento, setPrimeiroVencimento] = useState("01/01/2026")
   const [carregando, setCarregando] = useState(false)
   const [erros, setErros] = useState<Record<string, string>>({})
 
@@ -136,6 +167,119 @@ export function FormularioParcelas({ onResultados }: FormularioParcelasProps) {
         i === indice ? { ...parcela, [campo]: valor } : parcela
       )
     )
+  }
+
+  function gerarParcelas() {
+    const novosErros: Record<string, string> = {}
+    const total = Math.floor(totalParcelas)
+    const intervaloJurosNormalizado = Math.floor(intervaloJuros)
+    const intervaloPrincipalNormalizado = Math.floor(intervaloPrincipal)
+    const carenciaJurosNormalizada = Math.floor(carenciaJuros)
+    const carenciaPrincipalNormalizada = Math.floor(carenciaPrincipal)
+    const valorPrincipalNumero = parseFloat(valorPrincipalGerado)
+
+    if (!Number.isFinite(total) || total < 1) {
+      novosErros.gerador_total = "Quantidade total deve ser um número >= 1"
+    }
+    if (
+      !Number.isFinite(intervaloJurosNormalizado) ||
+      intervaloJurosNormalizado < 1
+    ) {
+      novosErros.gerador_intervalo_juros =
+        "Intervalo de juros deve ser um número >= 1"
+    }
+    if (
+      !Number.isFinite(intervaloPrincipalNormalizado) ||
+      intervaloPrincipalNormalizado < 1
+    ) {
+      novosErros.gerador_intervalo_principal =
+        "Intervalo de principal deve ser um número >= 1"
+    }
+    if (
+      !Number.isFinite(carenciaJurosNormalizada) ||
+      carenciaJurosNormalizada < 0
+    ) {
+      novosErros.gerador_carencia_juros =
+        "Carência de juros deve ser um número >= 0"
+    }
+    if (
+      !Number.isFinite(carenciaPrincipalNormalizada) ||
+      carenciaPrincipalNormalizada < 0
+    ) {
+      novosErros.gerador_carencia_principal =
+        "Carência de principal deve ser um número >= 0"
+    }
+    if (
+      valorPrincipalGerado &&
+      (isNaN(valorPrincipalNumero) || valorPrincipalNumero < 0)
+    ) {
+      novosErros.gerador_valor_principal =
+        "Valor principal deve ser um número >= 0"
+    }
+
+    const dataBase = parsearDataBR(primeiroVencimento)
+    if (!dataBase) {
+      novosErros.gerador_data_base =
+        "Primeiro vencimento deve estar em dd/mm/aaaa"
+    }
+
+    if (Object.keys(novosErros).length > 0) {
+      setErros((prev) => ({ ...prev, ...novosErros }))
+      return
+    }
+
+    const baseDate = criarDataLocal(dataBase!.iso)
+    const valorPrincipalBase = valorPrincipalGerado ? valorPrincipalGerado : "0"
+    const parcelasGeradas: ParcelaFormulario[] = []
+    let mesIndex = 0
+
+    while (parcelasGeradas.length < total) {
+      const vencimento = formatarDataBR(adicionarMeses(baseDate, mesIndex))
+
+      if (
+        mesIndex >= carenciaPrincipalNormalizada &&
+        (mesIndex - carenciaPrincipalNormalizada) %
+          intervaloPrincipalNormalizado ===
+          0
+      ) {
+        parcelasGeradas.push({
+          tipo: 0,
+          valorPrincipal: valorPrincipalBase,
+          vencimento,
+          liquidada: false,
+        })
+      }
+
+      if (
+        parcelasGeradas.length < total &&
+        mesIndex >= carenciaJurosNormalizada &&
+        (mesIndex - carenciaJurosNormalizada) % intervaloJurosNormalizado === 0
+      ) {
+        parcelasGeradas.push({
+          tipo: 1,
+          valorPrincipal: "0",
+          vencimento,
+          liquidada: false,
+        })
+      }
+
+      mesIndex += 1
+    }
+
+    setParcelas(parcelasGeradas)
+    setErros((prev) => {
+      const {
+        gerador_total,
+        gerador_intervalo_juros,
+        gerador_intervalo_principal,
+        gerador_carencia_juros,
+        gerador_carencia_principal,
+        gerador_valor_principal,
+        gerador_data_base,
+        ...rest
+      } = prev
+      return rest
+    })
   }
 
   function validar(): boolean {
@@ -230,12 +374,12 @@ export function FormularioParcelas({ onResultados }: FormularioParcelasProps) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 py-4">
+        <div className="grid gap-6 py-4">
           {erros.geral && (
             <p className="text-sm text-destructive">{erros.geral}</p>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-6">
             <div className="space-y-2">
               <Label htmlFor="percentualCdi">Percentual CDI</Label>
               <div className="relative">
@@ -285,7 +429,7 @@ export function FormularioParcelas({ onResultados }: FormularioParcelasProps) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-6">
             <div className="space-y-2">
               <Label htmlFor="dataInicial">Data Inicial</Label>
               <Input
@@ -333,7 +477,188 @@ export function FormularioParcelas({ onResultados }: FormularioParcelasProps) {
             </div>
           </div>
 
-          <div className="space-y-3">
+          <details className="rounded-lg border bg-muted/30 p-4">
+            <summary className="flex cursor-pointer items-center justify-between gap-3 text-sm font-medium">
+              <span>Gerador automático</span>
+              <span className="text-xs text-muted-foreground">
+                Clique para expandir
+              </span>
+            </summary>
+
+            <div className="mt-4 space-y-4">
+              <p className="text-xs text-muted-foreground">
+                Gera parcelas a partir do primeiro vencimento.
+              </p>
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="space-y-2">
+                <Label htmlFor="totalParcelas">Total de parcelas</Label>
+                <Input
+                  id="totalParcelas"
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  step={1}
+                  value={totalParcelas}
+                  onChange={(e) => setTotalParcelas(Number(e.target.value))}
+                  aria-invalid={!!erros.gerador_total}
+                />
+                {erros.gerador_total && (
+                  <p className="text-xs text-destructive">
+                    {erros.gerador_total}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="intervaloJuros">Juros a cada (meses)</Label>
+                <Input
+                  id="intervaloJuros"
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  step={1}
+                  value={intervaloJuros}
+                  onChange={(e) => setIntervaloJuros(Number(e.target.value))}
+                  aria-invalid={!!erros.gerador_intervalo_juros}
+                />
+                {erros.gerador_intervalo_juros && (
+                  <p className="text-xs text-destructive">
+                    {erros.gerador_intervalo_juros}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="intervaloPrincipal">
+                  Principal a cada (meses)
+                </Label>
+                <Input
+                  id="intervaloPrincipal"
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  step={1}
+                  value={intervaloPrincipal}
+                  onChange={(e) => setIntervaloPrincipal(Number(e.target.value))}
+                  aria-invalid={!!erros.gerador_intervalo_principal}
+                />
+                {erros.gerador_intervalo_principal && (
+                  <p className="text-xs text-destructive">
+                    {erros.gerador_intervalo_principal}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="carenciaJuros">Carência juros (meses)</Label>
+                <Input
+                  id="carenciaJuros"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  step={1}
+                  value={carenciaJuros}
+                  onChange={(e) => setCarenciaJuros(Number(e.target.value))}
+                  aria-invalid={!!erros.gerador_carencia_juros}
+                />
+                {erros.gerador_carencia_juros && (
+                  <p className="text-xs text-destructive">
+                    {erros.gerador_carencia_juros}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="carenciaPrincipal">
+                  Carência principal (meses)
+                </Label>
+                <Input
+                  id="carenciaPrincipal"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  step={1}
+                  value={carenciaPrincipal}
+                  onChange={(e) => setCarenciaPrincipal(Number(e.target.value))}
+                  aria-invalid={!!erros.gerador_carencia_principal}
+                />
+                {erros.gerador_carencia_principal && (
+                  <p className="text-xs text-destructive">
+                    {erros.gerador_carencia_principal}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="primeiroVencimento">
+                  Primeiro vencimento
+                </Label>
+                <Input
+                  id="primeiroVencimento"
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="dd/mm/aaaa"
+                  value={primeiroVencimento}
+                  onChange={(e) =>
+                    setPrimeiroVencimento(
+                      normalizarDataDigitada(e.target.value)
+                    )
+                  }
+                  onBlur={(e) => {
+                    const data = parsearDataBR(e.target.value)
+                    if (data) setPrimeiroVencimento(data.display)
+                  }}
+                  aria-invalid={!!erros.gerador_data_base}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="valorPrincipalGerado">
+                  Valor do principal
+                </Label>
+                <Input
+                  id="valorPrincipalGerado"
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="R$ 0,00"
+                  value={
+                    valorPrincipalGerado
+                      ? formatarMoeda(valorPrincipalGerado)
+                      : ""
+                  }
+                  onChange={(e) =>
+                    setValorPrincipalGerado(parsearMoedaDigitada(e.target.value))
+                  }
+                  aria-invalid={!!erros.gerador_valor_principal}
+                />
+                {erros.gerador_valor_principal && (
+                  <p className="text-xs text-destructive">
+                    {erros.gerador_valor_principal}
+                  </p>
+                )}
+              </div>
+            </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={gerarParcelas}
+                >
+                  Gerar parcelas
+                </Button>
+                {erros.gerador_data_base && (
+                  <p className="text-xs text-destructive">
+                    {erros.gerador_data_base}
+                  </p>
+                )}
+              </div>
+            </div>
+          </details>
+
+          <div className="space-y-4">
             <div className="flex items-center justify-between">
               <Label>Parcelas</Label>
               <Button
@@ -351,11 +676,15 @@ export function FormularioParcelas({ onResultados }: FormularioParcelasProps) {
               <p className="text-xs text-destructive">{erros.parcelas}</p>
             )}
 
-            <div className="space-y-3">
+            <div className="space-y-4">
               {parcelas.map((parcela, indice) => (
                 <div
                   key={indice}
-                  className="grid grid-cols-1 gap-2 items-end rounded-lg border p-3 sm:grid-cols-[1fr_1fr_auto_auto_auto]"
+                  className={cn(
+                    "grid grid-cols-1 gap-3 items-end rounded-lg border p-4 sm:grid-cols-[1fr_1fr_auto_auto_auto]",
+                    parcela.tipo === 1 &&
+                      "bg-muted/40 border-l-4 border-l-muted-foreground/40"
+                  )}
                 >
                   <div className="space-y-1.5">
                     <Label className="text-xs">Vencimento</Label>
@@ -389,7 +718,7 @@ export function FormularioParcelas({ onResultados }: FormularioParcelasProps) {
                       placeholder="R$ 0,00"
                       value={
                         parcela.tipo === 1
-                          ? formatarMoeda(0)
+                          ? "-"
                           : parcela.valorPrincipal
                             ? formatarMoeda(parcela.valorPrincipal)
                             : ""
@@ -408,7 +737,7 @@ export function FormularioParcelas({ onResultados }: FormularioParcelasProps) {
                       }}
                       readOnly={parcela.tipo === 1}
                       aria-invalid={!!erros[`parcela_${indice}_valor`]}
-                      className={parcela.tipo === 1 ? "bg-muted cursor-not-allowed" : ""}
+                      className={parcela.tipo === 1 ? "bg-muted text-muted-foreground cursor-not-allowed" : ""}
                     />
                   </div>
 
